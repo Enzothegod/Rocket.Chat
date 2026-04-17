@@ -11,6 +11,7 @@ Within each PON namespace, SECC governs:
 - entitlement validity
 - collateral sufficiency
 - TreasuryDirect-backed collateral eligibility and valuation ingest
+- BaaS rail eligibility and payout account controls
 - token valuation and tokenization limits
 - mint authorization and circulation allocation
 - settlement transitions
@@ -41,6 +42,7 @@ Cross-cutting:
 - **Entitlement Service**: reads/writes entitlement objects and lock states.
 - **Collateral Service**: computes adjusted collateral using haircut/liquidity inputs.
 - **TreasuryDirect Feed Adapter**: ingests TreasuryDirect security reference/price data for eligible collateral marks.
+- **BaaS Integration Adapter**: validates bank-account eligibility, funding limits, and payout rail health.
 - **Risk Scoring Service**: computes SNAP factor and dynamic thresholds.
 - **SECC Decision Service**: deterministic rule evaluation and action emission.
 - **Tokenization Service**: computes mint quantity from valuation policy and applies circulation caps.
@@ -56,6 +58,10 @@ Suggested topics (partitioned by `pon`):
 - `pon.{id}.collateral.evaluated`
 - `pon.{id}.collateral.treasurydirect.ingested`
 - `pon.{id}.collateral.treasurydirect.quality_checked`
+- `pon.{id}.baas.account.verified`
+- `pon.{id}.baas.rail.health_checked`
+- `pon.{id}.baas.transfer.initiated`
+- `pon.{id}.baas.transfer.reconciled`
 - `pon.{id}.risk.scored`
 - `pon.{id}.decision.emitted`
 - `pon.{id}.token.valuation.computed`
@@ -119,6 +125,22 @@ Suggested topics (partitioned by `pon`):
 }
 ```
 
+### BaaS transfer
+
+```json
+{
+  "transfer_id": "BT-551",
+  "pon": "PON-1984",
+  "settlement_id": "S-9001",
+  "provider": "BAAS_PROVIDER_X",
+  "rail": "ACH",
+  "direction": "OUTBOUND",
+  "amount": "10000.00",
+  "status": "IN_FLIGHT",
+  "provider_reference": "TRX-992112"
+}
+```
+
 ### Token valuation
 
 ```json
@@ -155,14 +177,15 @@ Suggested topics (partitioned by `pon`):
 1. Validate entitlement
 2. Validate compliance flags
 3. Ingest and quality-check TreasuryDirect valuation marks (if applicable)
-4. Compute collateral effective value
-5. Compute valuation basis and token unit value
-6. Evaluate tokenization policy and mint eligibility
-7. Compute risk-adjusted capacity
-8. Compare required exposure + circulation constraints
-9. Emit allow/deny/hold decision
-10. Advance settlement state machine
-11. Persist ledger transition
+4. Validate BaaS account and rail readiness (if cash settlement requested)
+5. Compute collateral effective value
+6. Compute valuation basis and token unit value
+7. Evaluate tokenization policy and mint eligibility
+8. Compute risk-adjusted capacity
+9. Compare required exposure + circulation constraints
+10. Emit allow/deny/hold decision
+11. Advance settlement state machine
+12. Persist ledger transition
 ```
 
 ### Rule definitions
@@ -180,6 +203,10 @@ Suggested topics (partitioned by `pon`):
   - `capacity = market_value * liquidity_score * SNAP_factor`
 - **R4 Settlement gate**
   - allow settlement only if entitlement valid, collateral sufficient, and compliance pass
+- **R4a BaaS settlement gate**
+  - if settlement rail is BaaS-backed, require account status `VERIFIED`
+  - require rail health `UP` and amount within provider/account limits
+  - emit `BAAS_RAIL_UNAVAILABLE` or `BAAS_ACCOUNT_RESTRICTED` on failure
 - **R5 Token valuation**
   - `valuation_basis = effective_collateral * fx_buffer * risk_buffer`
   - `token_price = valuation_basis / token_supply_reference`
@@ -203,6 +230,8 @@ Failure states:
 - `COLLATERAL_INSUFFICIENT`
 - `TREASURYDIRECT_MARK_STALE`
 - `TREASURYDIRECT_MARK_INVALID`
+- `BAAS_RAIL_UNAVAILABLE`
+- `BAAS_ACCOUNT_RESTRICTED`
 - `ON_HOLD`
 - `REVERSED`
 - `MINT_BLOCKED`
@@ -237,6 +266,8 @@ Required metrics:
 - collateral coverage ratio
 - TreasuryDirect mark freshness lag
 - TreasuryDirect ingest failure rate
+- BaaS account verification failure rate
+- BaaS transfer reconciliation lag
 - token valuation drift ratio
 - minted-to-collateral coverage ratio
 - circulating supply utilization
@@ -259,6 +290,10 @@ Required audit fields on every decision:
 - `GET /pons/{pon}/collateral/coverage` -> current coverage/shortfall
 - `POST /pons/{pon}/collateral/treasurydirect/ingest` -> ingest and validate TreasuryDirect marks
 - `GET /pons/{pon}/collateral/treasurydirect/status` -> source freshness and quality status
+- `POST /pons/{pon}/baas/accounts/verify` -> verify payout/funding account eligibility
+- `GET /pons/{pon}/baas/rails/health` -> current BaaS rail availability
+- `POST /pons/{pon}/baas/transfers` -> initiate BaaS transfer for settlement leg
+- `GET /pons/{pon}/baas/transfers/{id}` -> transfer status and reconciliation data
 - `POST /pons/{pon}/token-valuation` -> compute and persist valuation snapshot
 - `POST /pons/{pon}/mint` -> run mint authorization and allocation logic
 - `GET /pons/{pon}/circulation` -> circulating vs reserve supply positions

@@ -61,6 +61,57 @@ CREATE TABLE treasurydirect_marks (
 CREATE INDEX idx_treasurydirect_marks_pon_asof ON treasurydirect_marks (pon, as_of DESC);
 CREATE INDEX idx_treasurydirect_marks_cusip_asof ON treasurydirect_marks (cusip, as_of DESC);
 
+CREATE TABLE baas_accounts (
+  account_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  provider VARCHAR(64) NOT NULL,
+  provider_account_ref VARCHAR(128) NOT NULL,
+  account_type VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  currency_code CHAR(3) NOT NULL,
+  velocity_limit_daily NUMERIC(30,10),
+  velocity_limit_monthly NUMERIC(30,10),
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, provider, provider_account_ref)
+);
+
+CREATE INDEX idx_baas_accounts_pon_status ON baas_accounts (pon, status);
+
+CREATE TABLE baas_rail_health (
+  health_id BIGSERIAL PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  provider VARCHAR(64) NOT NULL,
+  rail VARCHAR(32) NOT NULL,
+  health_status VARCHAR(16) NOT NULL,
+  observed_at TIMESTAMPTZ NOT NULL,
+  details JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, provider, rail, observed_at)
+);
+
+CREATE INDEX idx_baas_rail_health_pon_observed ON baas_rail_health (pon, observed_at DESC);
+
+CREATE TABLE baas_transfers (
+  transfer_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  settlement_id VARCHAR(64),
+  account_id VARCHAR(64) NOT NULL REFERENCES baas_accounts(account_id),
+  provider VARCHAR(64) NOT NULL,
+  rail VARCHAR(32) NOT NULL,
+  direction VARCHAR(16) NOT NULL,
+  amount NUMERIC(30,10) NOT NULL,
+  currency_code CHAR(3) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  provider_reference VARCHAR(128),
+  initiated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reconciled_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_baas_transfers_pon_status ON baas_transfers (pon, status);
+CREATE INDEX idx_baas_transfers_settlement ON baas_transfers (settlement_id);
+
 CREATE TABLE token_valuations (
   valuation_id VARCHAR(64) PRIMARY KEY,
   pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
