@@ -10,6 +10,8 @@ Within each PON namespace, SECC governs:
 
 - entitlement validity
 - collateral sufficiency
+- token valuation and tokenization limits
+- mint authorization and circulation allocation
 - settlement transitions
 - risk-triggered controls
 
@@ -39,6 +41,7 @@ Cross-cutting:
 - **Collateral Service**: computes adjusted collateral using haircut/liquidity inputs.
 - **Risk Scoring Service**: computes SNAP factor and dynamic thresholds.
 - **SECC Decision Service**: deterministic rule evaluation and action emission.
+- **Tokenization Service**: computes mint quantity from valuation policy and applies circulation caps.
 - **Settlement Orchestrator**: finite state machine for settlement execution.
 - **Ledger Writer**: commits immutable state transitions and event hashes.
 
@@ -51,6 +54,9 @@ Suggested topics (partitioned by `pon`):
 - `pon.{id}.collateral.evaluated`
 - `pon.{id}.risk.scored`
 - `pon.{id}.decision.emitted`
+- `pon.{id}.token.valuation.computed`
+- `pon.{id}.token.mint.authorized`
+- `pon.{id}.token.circulation.allocated`
 - `pon.{id}.settlement.transitioned`
 - `pon.{id}.ledger.committed`
 - `pon.{id}.alert.raised`
@@ -107,17 +113,49 @@ Suggested topics (partitioned by `pon`):
 }
 ```
 
+### Token valuation
+
+```json
+{
+  "pon": "PON-1984",
+  "valuation_id": "TV-2201",
+  "as_of": "2026-04-16T00:00:00Z",
+  "collateral_effective_value": "475000.00",
+  "fx_buffer": "0.99",
+  "risk_buffer": "0.97",
+  "valuation_basis": "460332.50",
+  "token_price": "1.00"
+}
+```
+
+### Token mint allocation
+
+```json
+{
+  "mint_id": "M-712",
+  "pon": "PON-1984",
+  "valuation_id": "TV-2201",
+  "minted_quantity": "120000.00",
+  "circulating_allocated": "100000.00",
+  "reserve_allocated": "20000.00",
+  "status": "AUTHORIZED",
+  "version": 3
+}
+```
+
 ## 5) Deterministic rule pipeline
 
 ```text
 1. Validate entitlement
 2. Validate compliance flags
 3. Compute collateral effective value
-4. Compute risk-adjusted capacity
-5. Compare required exposure
-6. Emit allow/deny/hold decision
-7. Advance settlement state machine
-8. Persist ledger transition
+4. Compute valuation basis and token unit value
+5. Evaluate tokenization policy and mint eligibility
+6. Compute risk-adjusted capacity
+7. Compare required exposure + circulation constraints
+8. Emit allow/deny/hold decision
+9. Advance settlement state machine
+10. Persist ledger transition
 ```
 
 ### Rule definitions
@@ -131,6 +169,16 @@ Suggested topics (partitioned by `pon`):
   - `capacity = market_value * liquidity_score * SNAP_factor`
 - **R4 Settlement gate**
   - allow settlement only if entitlement valid, collateral sufficient, and compliance pass
+- **R5 Token valuation**
+  - `valuation_basis = effective_collateral * fx_buffer * risk_buffer`
+  - `token_price = valuation_basis / token_supply_reference`
+- **R6 Minting authorization**
+  - authorize mint only when `valuation_basis` exists for the current valuation window
+  - `minted_quantity <= mint_policy.max_mint_per_window`
+- **R7 Circulation allocation**
+  - `circulating_allocated <= minted_quantity`
+  - `circulating_total <= circulation_cap`
+  - excess moves to reserve bucket (non-circulating)
 
 ## 6) Settlement finite state machine
 
@@ -144,6 +192,8 @@ Failure states:
 - `COLLATERAL_INSUFFICIENT`
 - `ON_HOLD`
 - `REVERSED`
+- `MINT_BLOCKED`
+- `CIRCULATION_CAP_EXCEEDED`
 
 Invariant examples:
 
@@ -172,6 +222,9 @@ Required metrics:
 
 - settlement transition latency p50/p95/p99
 - collateral coverage ratio
+- token valuation drift ratio
+- minted-to-collateral coverage ratio
+- circulating supply utilization
 - shortfall trigger count
 - on-hold queue depth
 - replay divergence count
@@ -189,6 +242,9 @@ Required audit fields on every decision:
 - `POST /pons/{pon}/requests` -> submit issuance/redemption/transfer request
 - `GET /pons/{pon}/entitlements/{id}` -> entitlement snapshot
 - `GET /pons/{pon}/collateral/coverage` -> current coverage/shortfall
+- `POST /pons/{pon}/token-valuation` -> compute and persist valuation snapshot
+- `POST /pons/{pon}/mint` -> run mint authorization and allocation logic
+- `GET /pons/{pon}/circulation` -> circulating vs reserve supply positions
 - `GET /pons/{pon}/settlements/{id}` -> settlement state and history
 - `POST /pons/{pon}/replay` -> deterministic replay verification job
 

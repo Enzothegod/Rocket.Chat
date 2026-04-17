@@ -40,6 +40,51 @@ CREATE TABLE collateral_positions (
 
 CREATE INDEX idx_collateral_pon ON collateral_positions (pon);
 
+CREATE TABLE token_valuations (
+  valuation_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  as_of TIMESTAMPTZ NOT NULL,
+  collateral_effective_value NUMERIC(30,10) NOT NULL,
+  fx_buffer NUMERIC(10,6) NOT NULL,
+  risk_buffer NUMERIC(10,6) NOT NULL,
+  valuation_basis NUMERIC(30,10) NOT NULL,
+  token_price NUMERIC(30,10) NOT NULL,
+  valuation_window VARCHAR(32) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, as_of, valuation_window)
+);
+
+CREATE INDEX idx_token_valuations_pon_asof ON token_valuations (pon, as_of DESC);
+
+CREATE TABLE token_mints (
+  mint_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  valuation_id VARCHAR(64) NOT NULL REFERENCES token_valuations(valuation_id),
+  minted_quantity NUMERIC(30,10) NOT NULL,
+  circulating_allocated NUMERIC(30,10) NOT NULL,
+  reserve_allocated NUMERIC(30,10) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  reason_code VARCHAR(64),
+  policy_version INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (circulating_allocated >= 0),
+  CHECK (reserve_allocated >= 0),
+  CHECK (minted_quantity = circulating_allocated + reserve_allocated)
+);
+
+CREATE INDEX idx_token_mints_pon_created ON token_mints (pon, created_at DESC);
+
+CREATE TABLE circulation_positions (
+  pon VARCHAR(64) PRIMARY KEY REFERENCES pon_programs(pon),
+  circulation_cap NUMERIC(30,10) NOT NULL,
+  circulating_total NUMERIC(30,10) NOT NULL,
+  reserve_total NUMERIC(30,10) NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (circulating_total >= 0),
+  CHECK (reserve_total >= 0),
+  CHECK (circulating_total <= circulation_cap)
+);
+
 CREATE TABLE settlements (
   settlement_id VARCHAR(64) PRIMARY KEY,
   pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
