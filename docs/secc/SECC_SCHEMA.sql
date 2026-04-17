@@ -28,6 +28,8 @@ CREATE TABLE collateral_positions (
   collateral_id VARCHAR(64) PRIMARY KEY,
   pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
   collateral_type VARCHAR(64) NOT NULL,
+  source_system VARCHAR(32) NOT NULL DEFAULT 'INTERNAL',
+  cusip VARCHAR(16),
   market_value NUMERIC(30,10) NOT NULL,
   liquidity_score NUMERIC(10,6) NOT NULL,
   haircut NUMERIC(10,6) NOT NULL,
@@ -39,6 +41,25 @@ CREATE TABLE collateral_positions (
 );
 
 CREATE INDEX idx_collateral_pon ON collateral_positions (pon);
+CREATE INDEX idx_collateral_pon_source ON collateral_positions (pon, source_system);
+CREATE INDEX idx_collateral_cusip ON collateral_positions (cusip);
+
+CREATE TABLE treasurydirect_marks (
+  mark_id BIGSERIAL PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  collateral_id VARCHAR(64) NOT NULL REFERENCES collateral_positions(collateral_id),
+  cusip VARCHAR(16) NOT NULL,
+  as_of TIMESTAMPTZ NOT NULL,
+  clean_price NUMERIC(20,10) NOT NULL,
+  accrued_interest NUMERIC(20,10) NOT NULL DEFAULT 0,
+  quality_status VARCHAR(16) NOT NULL,
+  source_message_id VARCHAR(128) NOT NULL,
+  ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, collateral_id, as_of, source_message_id)
+);
+
+CREATE INDEX idx_treasurydirect_marks_pon_asof ON treasurydirect_marks (pon, as_of DESC);
+CREATE INDEX idx_treasurydirect_marks_cusip_asof ON treasurydirect_marks (cusip, as_of DESC);
 
 CREATE TABLE token_valuations (
   valuation_id VARCHAR(64) PRIMARY KEY,

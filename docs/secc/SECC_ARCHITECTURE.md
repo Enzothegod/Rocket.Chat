@@ -10,6 +10,7 @@ Within each PON namespace, SECC governs:
 
 - entitlement validity
 - collateral sufficiency
+- TreasuryDirect-backed collateral eligibility and valuation ingest
 - token valuation and tokenization limits
 - mint authorization and circulation allocation
 - settlement transitions
@@ -39,6 +40,7 @@ Cross-cutting:
 - **Request Intake Service**: validates request schema and assigns idempotency key.
 - **Entitlement Service**: reads/writes entitlement objects and lock states.
 - **Collateral Service**: computes adjusted collateral using haircut/liquidity inputs.
+- **TreasuryDirect Feed Adapter**: ingests TreasuryDirect security reference/price data for eligible collateral marks.
 - **Risk Scoring Service**: computes SNAP factor and dynamic thresholds.
 - **SECC Decision Service**: deterministic rule evaluation and action emission.
 - **Tokenization Service**: computes mint quantity from valuation policy and applies circulation caps.
@@ -52,6 +54,8 @@ Suggested topics (partitioned by `pon`):
 - `pon.{id}.request.received`
 - `pon.{id}.entitlement.evaluated`
 - `pon.{id}.collateral.evaluated`
+- `pon.{id}.collateral.treasurydirect.ingested`
+- `pon.{id}.collateral.treasurydirect.quality_checked`
 - `pon.{id}.risk.scored`
 - `pon.{id}.decision.emitted`
 - `pon.{id}.token.valuation.computed`
@@ -90,7 +94,9 @@ Suggested topics (partitioned by `pon`):
 {
   "collateral_id": "C-778",
   "pon": "PON-1984",
-  "collateral_type": "TREASURY_BOND",
+  "collateral_type": "TREASURYDIRECT_TREASURY_BOND",
+  "source_system": "TREASURYDIRECT",
+  "cusip": "91282CJZ5",
   "market_value": "500000.00",
   "liquidity_score": "0.92",
   "haircut": "0.05",
@@ -148,14 +154,15 @@ Suggested topics (partitioned by `pon`):
 ```text
 1. Validate entitlement
 2. Validate compliance flags
-3. Compute collateral effective value
-4. Compute valuation basis and token unit value
-5. Evaluate tokenization policy and mint eligibility
-6. Compute risk-adjusted capacity
-7. Compare required exposure + circulation constraints
-8. Emit allow/deny/hold decision
-9. Advance settlement state machine
-10. Persist ledger transition
+3. Ingest and quality-check TreasuryDirect valuation marks (if applicable)
+4. Compute collateral effective value
+5. Compute valuation basis and token unit value
+6. Evaluate tokenization policy and mint eligibility
+7. Compute risk-adjusted capacity
+8. Compare required exposure + circulation constraints
+9. Emit allow/deny/hold decision
+10. Advance settlement state machine
+11. Persist ledger transition
 ```
 
 ### Rule definitions
@@ -165,6 +172,10 @@ Suggested topics (partitioned by `pon`):
   - reject when compliance state is not `PASS`
 - **R2 Collateral sufficiency**
   - if `effective_collateral < required_exposure`: emit `COLLATERAL_SHORTFALL`
+- **R2a TreasuryDirect mark validation**
+  - for TreasuryDirect-backed collateral, require valid CUSIP and non-stale mark timestamp
+  - reject marks older than `treasurydirect.max_mark_age`
+  - reject missing feed quality status `PASS`
 - **R3 Risk adjusted capacity**
   - `capacity = market_value * liquidity_score * SNAP_factor`
 - **R4 Settlement gate**
@@ -190,6 +201,8 @@ Failure states:
 
 - `REJECTED`
 - `COLLATERAL_INSUFFICIENT`
+- `TREASURYDIRECT_MARK_STALE`
+- `TREASURYDIRECT_MARK_INVALID`
 - `ON_HOLD`
 - `REVERSED`
 - `MINT_BLOCKED`
@@ -222,6 +235,8 @@ Required metrics:
 
 - settlement transition latency p50/p95/p99
 - collateral coverage ratio
+- TreasuryDirect mark freshness lag
+- TreasuryDirect ingest failure rate
 - token valuation drift ratio
 - minted-to-collateral coverage ratio
 - circulating supply utilization
@@ -242,6 +257,8 @@ Required audit fields on every decision:
 - `POST /pons/{pon}/requests` -> submit issuance/redemption/transfer request
 - `GET /pons/{pon}/entitlements/{id}` -> entitlement snapshot
 - `GET /pons/{pon}/collateral/coverage` -> current coverage/shortfall
+- `POST /pons/{pon}/collateral/treasurydirect/ingest` -> ingest and validate TreasuryDirect marks
+- `GET /pons/{pon}/collateral/treasurydirect/status` -> source freshness and quality status
 - `POST /pons/{pon}/token-valuation` -> compute and persist valuation snapshot
 - `POST /pons/{pon}/mint` -> run mint authorization and allocation logic
 - `GET /pons/{pon}/circulation` -> circulating vs reserve supply positions
