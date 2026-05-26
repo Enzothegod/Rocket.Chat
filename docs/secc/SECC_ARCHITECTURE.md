@@ -12,6 +12,7 @@ Within each PON namespace, SECC governs:
 - collateral sufficiency
 - TreasuryDirect-backed collateral eligibility and valuation ingest
 - BaaS rail eligibility and payout account controls
+- Merrill custody account eligibility and broker sweep settlement controls
 - token valuation and tokenization limits
 - mint authorization and circulation allocation
 - settlement transitions
@@ -43,6 +44,7 @@ Cross-cutting:
 - **Collateral Service**: computes adjusted collateral using haircut/liquidity inputs.
 - **TreasuryDirect Feed Adapter**: ingests TreasuryDirect security reference/price data for eligible collateral marks.
 - **BaaS Integration Adapter**: validates bank-account eligibility, funding limits, and payout rail health.
+- **Merrill Custody Adapter**: validates brokerage custody positions and sweep transfer instructions.
 - **Risk Scoring Service**: computes SNAP factor and dynamic thresholds.
 - **SECC Decision Service**: deterministic rule evaluation and action emission.
 - **Tokenization Service**: computes mint quantity from valuation policy and applies circulation caps.
@@ -62,6 +64,10 @@ Suggested topics (partitioned by `pon`):
 - `pon.{id}.baas.rail.health_checked`
 - `pon.{id}.baas.transfer.initiated`
 - `pon.{id}.baas.transfer.reconciled`
+- `pon.{id}.merrill.account.verified`
+- `pon.{id}.merrill.position.reconciled`
+- `pon.{id}.merrill.sweep.initiated`
+- `pon.{id}.merrill.sweep.reconciled`
 - `pon.{id}.risk.scored`
 - `pon.{id}.decision.emitted`
 - `pon.{id}.token.valuation.computed`
@@ -141,6 +147,21 @@ Suggested topics (partitioned by `pon`):
 }
 ```
 
+### Merrill sweep transfer
+
+```json
+{
+  "sweep_id": "MS-210",
+  "pon": "PON-1984",
+  "settlement_id": "S-9001",
+  "custody_account_id": "MA-1107",
+  "direction": "BROKERAGE_TO_BANK",
+  "amount": "250000.00",
+  "status": "PENDING_RECONCILIATION",
+  "broker_reference": "ML-REF-443981"
+}
+```
+
 ### Token valuation
 
 ```json
@@ -178,14 +199,15 @@ Suggested topics (partitioned by `pon`):
 2. Validate compliance flags
 3. Ingest and quality-check TreasuryDirect valuation marks (if applicable)
 4. Validate BaaS account and rail readiness (if cash settlement requested)
-5. Compute collateral effective value
-6. Compute valuation basis and token unit value
-7. Evaluate tokenization policy and mint eligibility
-8. Compute risk-adjusted capacity
-9. Compare required exposure + circulation constraints
-10. Emit allow/deny/hold decision
-11. Advance settlement state machine
-12. Persist ledger transition
+5. Validate Merrill custody account/position and sweep readiness (if brokerage leg requested)
+6. Compute collateral effective value
+7. Compute valuation basis and token unit value
+8. Evaluate tokenization policy and mint eligibility
+9. Compute risk-adjusted capacity
+10. Compare required exposure + circulation constraints
+11. Emit allow/deny/hold decision
+12. Advance settlement state machine
+13. Persist ledger transition
 ```
 
 ### Rule definitions
@@ -207,6 +229,11 @@ Suggested topics (partitioned by `pon`):
   - if settlement rail is BaaS-backed, require account status `VERIFIED`
   - require rail health `UP` and amount within provider/account limits
   - emit `BAAS_RAIL_UNAVAILABLE` or `BAAS_ACCOUNT_RESTRICTED` on failure
+- **R4b Merrill custody/sweep gate**
+  - if settlement uses Merrill custody, require custody account status `VERIFIED`
+  - require reconciled position quantity/value at or above requested transfer amount
+  - require sweep instruction status `READY`
+  - emit `MERRILL_POSITION_MISMATCH` or `MERRILL_SWEEP_BLOCKED` on failure
 - **R5 Token valuation**
   - `valuation_basis = effective_collateral * fx_buffer * risk_buffer`
   - `token_price = valuation_basis / token_supply_reference`
@@ -232,6 +259,8 @@ Failure states:
 - `TREASURYDIRECT_MARK_INVALID`
 - `BAAS_RAIL_UNAVAILABLE`
 - `BAAS_ACCOUNT_RESTRICTED`
+- `MERRILL_POSITION_MISMATCH`
+- `MERRILL_SWEEP_BLOCKED`
 - `ON_HOLD`
 - `REVERSED`
 - `MINT_BLOCKED`
@@ -268,6 +297,8 @@ Required metrics:
 - TreasuryDirect ingest failure rate
 - BaaS account verification failure rate
 - BaaS transfer reconciliation lag
+- Merrill position reconciliation mismatch rate
+- Merrill sweep settlement lag
 - token valuation drift ratio
 - minted-to-collateral coverage ratio
 - circulating supply utilization
@@ -294,6 +325,10 @@ Required audit fields on every decision:
 - `GET /pons/{pon}/baas/rails/health` -> current BaaS rail availability
 - `POST /pons/{pon}/baas/transfers` -> initiate BaaS transfer for settlement leg
 - `GET /pons/{pon}/baas/transfers/{id}` -> transfer status and reconciliation data
+- `POST /pons/{pon}/merrill/accounts/verify` -> verify Merrill custody account eligibility
+- `POST /pons/{pon}/merrill/positions/reconcile` -> reconcile Merrill custody positions
+- `POST /pons/{pon}/merrill/sweeps` -> initiate Merrill sweep transfer for settlement leg
+- `GET /pons/{pon}/merrill/sweeps/{id}` -> sweep status and reconciliation details
 - `POST /pons/{pon}/token-valuation` -> compute and persist valuation snapshot
 - `POST /pons/{pon}/mint` -> run mint authorization and allocation logic
 - `GET /pons/{pon}/circulation` -> circulating vs reserve supply positions

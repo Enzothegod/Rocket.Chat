@@ -112,6 +112,55 @@ CREATE TABLE baas_transfers (
 CREATE INDEX idx_baas_transfers_pon_status ON baas_transfers (pon, status);
 CREATE INDEX idx_baas_transfers_settlement ON baas_transfers (settlement_id);
 
+CREATE TABLE merrill_accounts (
+  custody_account_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  broker VARCHAR(32) NOT NULL DEFAULT 'MERRILL',
+  broker_account_ref VARCHAR(128) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  base_currency CHAR(3) NOT NULL,
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, broker, broker_account_ref)
+);
+
+CREATE INDEX idx_merrill_accounts_pon_status ON merrill_accounts (pon, status);
+
+CREATE TABLE merrill_positions (
+  position_id BIGSERIAL PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  custody_account_id VARCHAR(64) NOT NULL REFERENCES merrill_accounts(custody_account_id),
+  instrument_id VARCHAR(64) NOT NULL,
+  cusip VARCHAR(16),
+  quantity NUMERIC(30,10) NOT NULL,
+  market_value NUMERIC(30,10) NOT NULL,
+  as_of TIMESTAMPTZ NOT NULL,
+  reconciliation_status VARCHAR(32) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (pon, custody_account_id, instrument_id, as_of)
+);
+
+CREATE INDEX idx_merrill_positions_pon_asof ON merrill_positions (pon, as_of DESC);
+CREATE INDEX idx_merrill_positions_account_asof ON merrill_positions (custody_account_id, as_of DESC);
+
+CREATE TABLE merrill_sweeps (
+  sweep_id VARCHAR(64) PRIMARY KEY,
+  pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
+  settlement_id VARCHAR(64),
+  custody_account_id VARCHAR(64) NOT NULL REFERENCES merrill_accounts(custody_account_id),
+  direction VARCHAR(32) NOT NULL,
+  amount NUMERIC(30,10) NOT NULL,
+  currency_code CHAR(3) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  broker_reference VARCHAR(128),
+  initiated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reconciled_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_merrill_sweeps_pon_status ON merrill_sweeps (pon, status);
+CREATE INDEX idx_merrill_sweeps_settlement ON merrill_sweeps (settlement_id);
+
 CREATE TABLE token_valuations (
   valuation_id VARCHAR(64) PRIMARY KEY,
   pon VARCHAR(64) NOT NULL REFERENCES pon_programs(pon),
