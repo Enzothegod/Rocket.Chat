@@ -1,10 +1,11 @@
-import { Box, Card, CardBody, CardControls, CardTitle, FramedIcon } from '@rocket.chat/fuselage';
+import { Box, FramedIcon } from '@rocket.chat/fuselage';
 import { useMediaQuery } from '@rocket.chat/fuselage-hooks';
 import type { ReactElement } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PRICING_LINK } from '../../utils/links';
+import FeatureUsageCard from '../FeatureUsageCard';
 import InfoTextIconModal from '../InfoTextIconModal';
 
 type FeatureSet = {
@@ -64,28 +65,31 @@ const FeaturesCard = ({ activeModules, isEnterprise }: FeaturesCardProps): React
 	const { t } = useTranslation();
 	const isSmall = useMediaQuery('(min-width: 1180px)');
 
+	const comparePlansLink = (
+		<a target='_blank' rel='noopener noreferrer' href={PRICING_LINK}>
+			{t('Compare_plans')}
+		</a>
+	);
+
 	return (
-		<Card>
-			<CardTitle>{!isEnterprise ? t('Unlock_premium_capabilities') : t('Includes')}</CardTitle>
-			<CardBody>
-				<Box display='flex' flexWrap='wrap' justifyContent='space-between' flexDirection={isSmall ? 'row' : 'column'}>
-					{getFeatureSet(activeModules, isEnterprise).map(({ success, title, infoText }, index) => (
-						<Box key={`feature_${index}`} display='flex' alignItems='center' mbe={4} width={isSmall ? '50%' : 'full'}>
-							<FramedIcon success={success} icon={success ? 'check' : 'lock'} />
-							<Box is='p' fontScale='p2' mis={12} mie={2} color='font-secondary-info'>
-								{t(title)}
-							</Box>
-							{infoText && <InfoTextIconModal title={t(title)} infoText={t(infoText)} />}
+		<FeatureUsageCard
+			card={{
+				title: !isEnterprise ? t('Unlock_premium_capabilities') : t('Includes'),
+				upgradeButton: comparePlansLink,
+			}}
+		>
+			<Box display='flex' flexWrap='wrap' justifyContent='space-between' flexDirection={isSmall ? 'row' : 'column'}>
+				{getFeatureSet(activeModules, isEnterprise).map(({ success, title, infoText }, index) => (
+					<Box key={`feature_${index}`} display='flex' alignItems='center' mbe={4} width={isSmall ? '50%' : 'full'}>
+						<FramedIcon success={success} icon={success ? 'check' : 'lock'} />
+						<Box is='p' fontScale='p2' mis={12} mie={2} color='font-secondary-info'>
+							{t(title)}
 						</Box>
-					))}
-				</Box>
-			</CardBody>
-			<CardControls>
-				<a target='_blank' rel='noopener noreferrer' href={PRICING_LINK}>
-					{t('Compare_plans')}
-				</a>
-			</CardControls>
-		</Card>
+						{infoText && <InfoTextIconModal title={t(title)} infoText={t(infoText)} />}
+					</Box>
+				))}
+			</Box>
+		</FeatureUsageCard>
 	);
 };
 
